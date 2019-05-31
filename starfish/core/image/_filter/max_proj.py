@@ -1,4 +1,4 @@
-from typing import Iterable, Optional, Union
+from typing import Iterable
 
 from starfish.core.imagestack.imagestack import ImageStack
 from starfish.core.types import Axes
@@ -12,7 +12,7 @@ class MaxProject(FilterAlgorithmBase):
 
     Parameters
     ----------
-    dims : Axes
+    dims : Iterable[Axes]
         one or more Axes to project over
 
     See Also
@@ -21,8 +21,7 @@ class MaxProject(FilterAlgorithmBase):
 
     """
 
-    def __init__(self, dims: Iterable[Union[Axes, str]]) -> None:
-
+    def __init__(self, dims: Iterable[Axes]) -> None:
         self.dims = dims
 
     _DEFAULT_TESTING_PARAMETERS = {"dims": 'r'}
@@ -30,9 +29,7 @@ class MaxProject(FilterAlgorithmBase):
     def run(
             self,
             stack: ImageStack,
-            in_place: bool = False,
             verbose: bool = False,
-            n_processes: Optional[int] = None,
             *args,
     ) -> ImageStack:
         """Perform filtering of an image stack
@@ -41,21 +38,16 @@ class MaxProject(FilterAlgorithmBase):
         ----------
         stack : ImageStack
             Stack to be filtered.
-        in_place : bool
-            if True, process ImageStack in-place, otherwise return a new stack
         verbose : bool
             if True, report on filtering progress (default = False)
-        n_processes : Optional[int]
-            Number of parallel processes to devote to calculating the filter
 
         Returns
         -------
         ImageStack :
-            If in-place is False, return the results of filter as a new stack. Otherwise return the
-            original stack.
+            The max projection of an image across one or more axis.
 
         """
-        return stack.max_proj(*tuple(Axes(dim) for dim in self.dims))
+        return stack._max_proj(*self.dims)
 
     @staticmethod
     @click.command("MaxProject")
@@ -70,4 +62,5 @@ class MaxProject(FilterAlgorithmBase):
              "--dims r --dims c")
     @click.pass_context
     def _cli(ctx, dims):
-        ctx.obj["component"]._cli_run(ctx, MaxProject(dims))
+        formatted_dims = [Axes(dim) for dim in dims]
+        ctx.obj["component"]._cli_run(ctx, MaxProject(formatted_dims))

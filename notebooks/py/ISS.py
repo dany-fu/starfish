@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import pprint
 
 from starfish import data, FieldOfView
+from starfish.image import Filter
 from starfish.types import Features, Axes
 from starfish.util.plot import imshow_plane
 # EPY: END code
@@ -80,13 +81,19 @@ single_plane = imgs.sel(sel)
 imshow_plane(single_plane, title="Round: 0, Channel: 0")
 # EPY: END code
 
+# EPY: START code
+# We use a handful of max projections.  Initialize them.
+rcz_max_projection = Filter.MaxProject(dims={Axes.ROUND, Axes.CH, Axes.ZPLANE})
+cz_max_projection = Filter.MaxProject(dims={Axes.CH, Axes.ZPLANE})
+# EPY: END code
+
 # EPY: START markdown
 #'dots' is a general stain for all possible transcripts. This image should correspond to the maximum projcection of all color channels within a single imaging round. This auxiliary image is useful for registering images from multiple imaging rounds to this reference image. We'll see an example of this further on in the notebook
 # EPY: END markdown
 
 # EPY: START code
 dots = fov.get_image("dots")
-dots_single_plane = dots.max_proj(Axes.ROUND, Axes.CH, Axes.ZPLANE)
+dots_single_plane = rcz_max_projection.run(dots)
 imshow_plane(dots_single_plane, title="Anchor channel, all RNA molecules")
 # EPY: END code
 
@@ -96,7 +103,7 @@ imshow_plane(dots_single_plane, title="Anchor channel, all RNA molecules")
 
 # EPY: START code
 nuclei = fov.get_image("nuclei")
-nuclei_single_plane = nuclei.max_proj(Axes.ROUND, Axes.CH, Axes.ZPLANE)
+nuclei_single_plane = rcz_max_projection.run(nuclei)
 imshow_plane(nuclei_single_plane, title="Nuclei (DAPI) channel")
 # EPY: END code
 
@@ -107,8 +114,6 @@ imshow_plane(nuclei_single_plane, title="Nuclei (DAPI) channel")
 # EPY: END markdown
 
 # EPY: START code
-from starfish.image import Filter
-
 # filter raw data
 masking_radius = 15
 filt = Filter.WhiteTophat(masking_radius, is_volume=False)
@@ -145,8 +150,9 @@ imshow_plane(
 # EPY: START code
 from starfish.image import ApplyTransform, LearnTransform
 
+per_round_max_projected = cz_max_projection.run(imgs)
 learn_translation = LearnTransform.Translation(reference_stack=dots, axes=Axes.ROUND, upsampling=1000)
-transforms_list = learn_translation.run(imgs.max_proj(Axes.CH, Axes.ZPLANE))
+transforms_list = learn_translation.run(per_round_max_projected)
 warp = ApplyTransform.Warp()
 registered_imgs = warp.run(filtered_imgs, transforms_list=transforms_list, in_place=False, verbose=True)
 # EPY: END code
@@ -211,12 +217,6 @@ dapi_thresh = .18  # binary mask for cell (nuclear) locations
 stain_thresh = .22  # binary mask for overall cells // binarization of stain
 min_dist = 57
 
-registered_mp = registered_imgs.max_proj(Axes.CH, Axes.ZPLANE).xarray.squeeze()
-stain = np.mean(registered_mp, axis=0)
-stain = stain/stain.max()
-nuclei = nuclei.max_proj(Axes.ROUND, Axes.CH, Axes.ZPLANE)
-
-
 seg = Segment.Watershed(
     nuclei_threshold=dapi_thresh,
     input_threshold=stain_thresh,
@@ -255,10 +255,10 @@ GENE1 = 'HER2'
 GENE2 = 'VIM'
 
 rgb = np.zeros(registered_imgs.tile_shape + (3,))
-nuclei_mp = nuclei.max_proj(Axes.ROUND, Axes.CH, Axes.ZPLANE)
+nuclei_mp = rcz_max_projection.run(nuclei)
 nuclei_numpy = nuclei_mp._squeezed_numpy(Axes.ROUND, Axes.CH, Axes.ZPLANE)
 rgb[:,:,0] = nuclei_numpy
-dots_mp = dots.max_proj(Axes.ROUND, Axes.CH, Axes.ZPLANE)
+dots_mp = rcz_max_projection.run(dots)
 dots_mp_numpy = dots_mp._squeezed_numpy(Axes.ROUND, Axes.CH, Axes.ZPLANE)
 rgb[:,:,1] = dots_mp_numpy
 do = rgb2gray(rgb)

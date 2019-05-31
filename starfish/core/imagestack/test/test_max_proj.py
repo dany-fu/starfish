@@ -4,6 +4,7 @@ import numpy as np
 
 from starfish import data
 from starfish.core.types import Axes, PhysicalCoordinateTypes
+from starfish.image import Filter
 from .factories import imagestack_with_coords_factory
 from .imagestack_test_utils import verify_physical_coordinates
 from ..imagestack import ImageStack
@@ -13,8 +14,9 @@ def test_max_projection_preserves_dtype():
     original_dtype = np.float32
     array = np.ones((2, 2, 2), dtype=original_dtype)
     image = ImageStack.from_numpy(array.reshape((1, 1, 2, 2, 2)))
+    max_projector = Filter.MaxProject(dims={Axes.CH, Axes.ROUND, Axes.ZPLANE})
 
-    max_projection = image.max_proj(Axes.CH, Axes.ROUND, Axes.ZPLANE)
+    max_projection = max_projector.run(image)
     assert max_projection.xarray.dtype == original_dtype
 
 
@@ -24,9 +26,11 @@ Z_COORDS = 1, 3
 
 
 def test_max_projection_preserves_coordinates():
+    max_projector = Filter.MaxProject(dims={Axes.CH, Axes.ROUND, Axes.ZPLANE})
+
     e = data.ISS(use_test_data=True)
     nuclei = e.fov().get_image('nuclei')
-    nuclei_proj = nuclei.max_proj(Axes.ROUND, Axes.CH, Axes.ZPLANE)
+    nuclei_proj = max_projector.run(nuclei)
     # Since this data already has only 1 round, 1 ch, 1 zplane
     # let's just assert that the max_proj operation didn't change anything
     assert nuclei.xarray.equals(nuclei_proj.xarray)
@@ -44,6 +48,6 @@ def test_max_projection_preserves_coordinates():
 
     stack = imagestack_with_coords_factory(stack_shape, physical_coords)
 
-    stack_proj = stack.max_proj(Axes.ROUND, Axes.CH, Axes.ZPLANE)
+    stack_proj = max_projector.run(stack)
     expected_z = np.average(Z_COORDS)
     verify_physical_coordinates(stack_proj, X_COORDS, Y_COORDS, expected_z)

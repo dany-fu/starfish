@@ -222,7 +222,7 @@ def detect_spots(data_stack: ImageStack,
 
     if reference_image is not None:
         if reference_image_max_projection_axes is not None:
-            reference_image = reference_image.max_proj(*reference_image_max_projection_axes)
+            reference_image = reference_image._max_proj(*reference_image_max_projection_axes)
             data_image = reference_image._squeezed_numpy(*reference_image_max_projection_axes)
         else:
             data_image = reference_image.xarray
