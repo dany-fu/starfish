@@ -1,7 +1,11 @@
+import importlib
+from enum import Enum
 from typing import (
     Callable,
     Iterable,
+    Mapping,
     MutableMapping,
+    Optional,
     Sequence,
     Union
 )
@@ -15,28 +19,40 @@ from starfish.core.util.dtype import preserve_float_range
 from ._base import FilterAlgorithmBase
 
 
+class FunctionSource(Enum):
+    def __init__(self, source: str, aliases: Optional[Mapping[str, str]] = None):
+        self.source = source
+        self.aliases = aliases or {}
+
+    @property
+    def module(self):
+        return importlib.import_module(self.source)
+
+    np = ("numpy", {'max': 'amax'})
+
+
 class Reduce(FilterAlgorithmBase):
     """
-    Reduces the dimensions of the ImageStack by applying a function
-    along one or more axes.
+    Reduces the dimensions of the ImageStack by applying a function along one or more axes.
 
     Parameters
     ----------
     dims : Axes
         one or more Axes to project over
-    func : Union[str, Callable]
-        function to apply across the dimension(s) specified by dims.
-        If a function is provided, it should follow the form specified by
-        DataArray.reduce():
-        http://xarray.pydata.org/en/stable/generated/xarray.DataArray.reduce.html
-        If a string is provided, it should correspond to a numpy function that
-        matches the form specified above
-        (i.e., function is resolved: func = getattr(np, func)).
-        Some common examples below:
-        amax: maximum intensity projection (applies numpy.amax)
-        max: maximum intensity projection (this is an alias for amax and applies numpy.amax)
-        mean: take the mean across the dim(s) (applies numpy.mean)
-        sum: sum across the dim(s) (applies numpy.sum)
+    func : str
+        Name of a function in the module specified by the `module` parameter to apply across the
+        dimension(s) specified by dims.  The function is resolved by getattr(<module>, func), except
+        in the cases of predefined aliases.  See :py:class:FunctionSource for more information about
+        aliases.
+
+        Some common examples for the np FunctionSource:
+        amax: maximum intensity projection (applies np.amax)
+        max: maximum intensity projection (this is an alias for amax and applies np.amax)
+        mean: take the mean across the dim(s) (applies np.mean)
+        sum: sum across the dim(s) (applies np.sum)
+    module : FunctionSource
+        Python module that serves as the source of the function.  It must be listed as one of the
+        members of :py:class:FunctionSource.
     clip_method : Clip
         (Default Clip.CLIP) Controls the way that data are scaled to retain skimage dtype
         requirements that float data fall in [0, 1].
@@ -51,19 +67,19 @@ class Reduce(FilterAlgorithmBase):
     """
 
     def __init__(
-        self, dims: Iterable[Union[Axes, str]], func: Union[str, Callable] = 'max',
-        clip_method: Clip = Clip.CLIP
+        self,
+            dims: Iterable[Union[Axes, str]],
+            func: str = "max",
+            module: FunctionSource = FunctionSource.np,
+            clip_method: Clip = Clip.CLIP
     ) -> None:
 
         self.dims = dims
         self.clip_method = clip_method
 
-        # If the user provided a string, convert to callable
-        if isinstance(func, str):
-            if func == 'max':
-                func = 'amax'
-            func = getattr(np, func)
-        self.func = func
+        function_source = module.module
+        method_name = module.aliases.get(func, func)
+        self.func = getattr(function_source, method_name)
 
     _DEFAULT_TESTING_PARAMETERS = {"dims": ['r'], "func": 'max'}
 
@@ -128,15 +144,19 @@ class Reduce(FilterAlgorithmBase):
              "--dims r --dims c")
     @click.option(
         "--func",
-        type=click.Choice(["max", "mean", "sum"]),
+        type=str,
+        help="The function to apply across dims."
+    )
+    @click.option(
+        "--module",
+        type=click.Choice([member.name for member in list(FunctionSource)]),
         multiple=False,
-        help="The function to apply across dims"
-             "Valid function names: max, mean, sum."
+        help="Module to source the function from.",
+        default=FunctionSource.np.name,
     )
     @click.option(
         "--clip-method", default=Clip.CLIP, type=Clip,
-        help="method to constrain data to [0,1]. options: 'clip', 'scale_by_image', "
-             "'scale_by_chunk'")
+        help="method to constrain data to [0,1]. options: 'clip', 'scale_by_image'")
     @click.pass_context
-    def _cli(ctx, dims, func, clip_method):
-        ctx.obj["component"]._cli_run(ctx, Reduce(dims, func, clip_method))
+    def _cli(ctx, dims, func, module, clip_method):
+        ctx.obj["component"]._cli_run(ctx, Reduce(dims, func, FunctionSource[module], clip_method))
