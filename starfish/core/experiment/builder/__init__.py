@@ -56,7 +56,7 @@ def build_image(
         fovs: Sequence[int],
         rounds: Sequence[int],
         chs: Sequence[int],
-        zplanes: Sequence[int],
+        zplanes: Optional[Sequence[int]],
         image_fetcher: TileFetcher,
         default_shape: Optional[Mapping[Axes, int]]=None,
         axes_order: Sequence[Axes]=DEFAULT_DIMENSION_ORDER,
@@ -73,7 +73,8 @@ def build_image(
     chs : Sequence[int]
         Sequence of the ch numbers in this image set.
     zplanes : Sequence[int]
-        Sequence of the zplane numbers in this image set.
+        Sequence of the zplane numbers in this image set.  If this is not set, the resulting image
+        is a 4D tensor.
     image_fetcher : TileFetcher
         Instance of TileFetcher that provides the data for the tile.
     default_shape : Optional[Tuple[int, int]]
@@ -96,26 +97,38 @@ def build_image(
     -------
     The slicedimage collection representing the image.
     """
+    if zplanes is not None:
+        write_z = True
+        tileset_dimensions = [
+            Coordinates.X,
+            Coordinates.Y,
+            Coordinates.Z,
+            Axes.ZPLANE,
+            Axes.ROUND,
+            Axes.CH,
+            Axes.X,
+            Axes.Y,
+        ]
+        tileset_shape = {Axes.ROUND: len(rounds), Axes.CH: len(chs), Axes.ZPLANE: len(zplanes)}
+    else:
+        zplanes = [0]
+        write_z = False
+        tileset_dimensions = [
+            Coordinates.X,
+            Coordinates.Y,
+            Axes.ROUND,
+            Axes.CH,
+            Axes.X,
+            Axes.Y,
+        ]
+        tileset_shape = {Axes.ROUND: len(rounds), Axes.CH: len(chs)}
+
     axes_sizes = join_axes_labels(
         axes_order, rounds=rounds, chs=chs, zplanes=zplanes)
 
     collection = Collection()
     for fov_id in fovs:
-        fov_images = TileSet(
-            [
-                Coordinates.X,
-                Coordinates.Y,
-                Coordinates.Z,
-                Axes.ZPLANE,
-                Axes.ROUND,
-                Axes.CH,
-                Axes.X,
-                Axes.Y,
-            ],
-            {Axes.ROUND: len(rounds), Axes.CH: len(chs), Axes.ZPLANE: len(zplanes)},
-            default_shape,
-            ImageFormat.TIFF,
-        )
+        fov_images = TileSet(tileset_dimensions, tileset_shape, default_shape, ImageFormat.TIFF)
 
         for selector in ordered_iterator(axes_sizes):
             image = image_fetcher.get_tile(
@@ -123,16 +136,13 @@ def build_image(
                 selector[Axes.ROUND],
                 selector[Axes.CH],
                 selector[Axes.ZPLANE])
-            tile = Tile(
-                image.coordinates,
-                {
-                    Axes.ZPLANE: (selector[Axes.ZPLANE]),
-                    Axes.ROUND: (selector[Axes.ROUND]),
-                    Axes.CH: (selector[Axes.CH]),
-                },
-                image.shape,
-                extras=image.extras,
-            )
+            indicies = {
+                Axes.ROUND: selector[Axes.ROUND],
+                Axes.CH: selector[Axes.CH],
+            }
+            if write_z:
+                indicies[Axes.ZPLANE] = selector[Axes.ZPLANE]
+            tile = Tile(image.coordinates, indicies, image.shape, extras=image.extras)
             tile.set_numpy_array_future(image.tile_data)
             # Astute readers might wonder why we set this variable.  This is to support in-place
             # experiment construction.  We monkey-patch slicedimage's Tile class such that checksum
